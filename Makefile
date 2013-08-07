@@ -80,13 +80,13 @@ test/%: lib$(project_id) $(object_dir)/test/%.o
 -include ${test_objects:.o=.d}
 
 # Dependencies
-# ifneq ($(HI_WITH_OPENSSL),)
-# openssl:
-# 	@rm -f "$(HI_INCLUDE_PREFIX)"/openssl
-# 	@ln -fs $(HI_WITH_OPENSSL)/include/openssl "$(HI_INCLUDE_PREFIX)"/openssl
-# 	@ln -fs $(HI_WITH_OPENSSL)/lib/libssl.* "$(HI_LIB_PREFIX)"/
-# 	@ln -fs $(HI_WITH_OPENSSL)/lib/libcrypto.* "$(HI_LIB_PREFIX)"/
-# else
+ifneq ($(HI_WITH_OPENSSL),)
+openssl:
+	@rm -f "$(HI_INCLUDE_PREFIX)"/openssl
+	@ln -fs $(HI_WITH_OPENSSL)/include/openssl "$(HI_INCLUDE_PREFIX)"/openssl
+	@ln -fs $(HI_WITH_OPENSSL)/lib/libssl.* "$(HI_LIB_PREFIX)"/
+	@ln -fs $(HI_WITH_OPENSSL)/lib/libcrypto.* "$(HI_LIB_PREFIX)"/
+else
 openssl: "$(HI_INCLUDE_PREFIX)"/openssl "$(HI_LIB_PREFIX)"/libssl.a "$(HI_LIB_PREFIX)"/libcrypto.a
 "$(HI_INCLUDE_PREFIX)"/openssl:
 	@rm -f $@ && ln -fs "$(DEPS_ROOT)"/openssl/include/openssl $@
@@ -96,7 +96,7 @@ openssl: "$(HI_INCLUDE_PREFIX)"/openssl "$(HI_LIB_PREFIX)"/libssl.a "$(HI_LIB_PR
 "$(HI_LIB_PREFIX)"/libcrypto.a:
 	@rm -f "$(HI_LIB_PREFIX)"/libcrypto.*
 	@ln -fs "$(DEPS_ROOT)"/openssl/libcrypto.a $@
-# endif
+endif
 
 leveldb: "$(HI_INCLUDE_PREFIX)"/leveldb "$(HI_LIB_PREFIX)"/libleveldb.a
 "$(HI_INCLUDE_PREFIX)"/leveldb:
