@@ -13,18 +13,18 @@ Something I use for most of my little C++ programs. Queues instead of threads, c
 int main(int argc, char** argv) {
   hi::channel::connect("tcp:[::1]:1337", [](hi::error err, hi::channel ch) {
     if (err) { std::cerr << err << "\n"; return; }
-    ch->read(4096, [=](hi::error e, hi::data data) {
+    ch.read(4096, [=](hi::error e, hi::data data) {
       if (err) {
         std::cout << "read error: " << err << "\n";
       } else if (data == nullptr) { // EOS
-        ch->close([=]{ std::cout << "closed\n"; });
+        ch.close([=]{ std::cout << "closed\n"; });
       } else {
         std::cout << "read " << data->size()
                   << " '" << std::string(data->bytes(), data->size()) << "'\n";
       }
       return true; // continue reading
     });
-    ch->write("Hello", strlen("Hello"), [=](hi::error err) {
+    ch.write("Hello", strlen("Hello"), [=](hi::error err) {
       if (err) { std::cerr << "write error: " << err << "\n"; }
     });
   });
