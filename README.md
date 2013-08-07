@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
 }
 ```
 
-```mk
+```Makefile
 all: program
 include $(shell HI_DEBUG="$(DEBUG)" hi/build_config.sh)
 objects := $(patsubst %.cc,%.o,$(wildcard *.cc))
