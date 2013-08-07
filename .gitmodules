@@ -1,0 +1,4 @@
+[submodule "deps/leveldb"]
+	path = deps/leveldb
+	url = https://code.google.com/p/leveldb/
+	branch = master

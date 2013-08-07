@@ -1,0 +1,9 @@
+*.o
+*.a
+*.d
+build
+lab
+test/*-fail
+.build_config.mk
+deps/openssl
+*.gz
