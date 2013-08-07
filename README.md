@@ -46,10 +46,12 @@ clean:
 .PHONY: clean
 ```
 
-    $ node -e "require('net').createServer(function (socket) {\
-      socket.pipe(socket); }).listen(1337, '::1');" &
+    $ echo -n $(date) | nc -l ::1 1337 | xargs echo Client says: &
     $ make && ./program
-    read 5 'Hello'
+    read 27 'Tue Aug 6 21:46:06 PDT 2013'
+    closed
+    Client says: Hello
+
 
 ## MIT License
 
