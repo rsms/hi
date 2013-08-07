@@ -44,20 +44,6 @@ common_pre:
 	@mkdir -p $(lib_header_dirs)
 	@mkdir -p "$(HI_LIB_PREFIX)"
 	@mkdir -p "$(HI_INCLUDE_PREFIX)"
-# @echo HI_PLATFORM=$(HI_PLATFORM)
-# @echo HI_BUILD_OBJDIR=$(HI_BUILD_OBJDIR)
-# @echo HI_BUILD_CFLAGS=$(HI_BUILD_CFLAGS)
-# @echo HI_BUILD_CXXFLAGS=$(HI_BUILD_CXXFLAGS)
-# @echo HI_BUILD_LDFLAGS=$(HI_BUILD_LDFLAGS)
-# @echo HI_PREFIX=$(HI_PREFIX)
-# @echo HI_LIB_PREFIX=$(HI_LIB_PREFIX)
-# @echo HI_INCLUDE_PREFIX=$(HI_INCLUDE_PREFIX)
-# @echo HI_SRCROOT=$(HI_SRCROOT)
-# @echo HI_TARGET_FLAGS=$(HI_TARGET_FLAGS)
-# @echo HI_CFLAGS=$(HI_CFLAGS)
-# @echo HI_CXXFLAGS=$(HI_CXXFLAGS)
-# @echo HI_LDFLAGS=$(HI_LDFLAGS)
-# @echo cxx_flags=$(cxx_flags)
 
 $(project_id): common_pre lib$(project_id)
 
@@ -144,6 +130,5 @@ $(object_dir)/%.o: %.m
 
 # header dependencies
 -include ${lib_objects:.o=.d}
-# -include ${main_objects:.o=.d}
 
 .PHONY: clean common_pre $(project_id) lib$(project_id) test_pre test
