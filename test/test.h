@@ -42,8 +42,8 @@ template <typename A, typename B> inline void HI_UNUSED _assert_fail(
 {
     std::cerr << "\nAssertion failure at "
               << source_name << ":" << source_line << "\n"
-              << "  " << name1 << " " << op << " " << name2 << "\n"
-              << "  " << value1 << " " << op << " " << value2
+              << "  Expected: " << name1 << " " << op << " " << name2 << "\n"
+              << "  Actual:   " << value1 << " " << op << " " << value2
               << std::endl;
     std::cerr.flush();
     _exit(30);
