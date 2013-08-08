@@ -22,8 +22,11 @@ lib_objects     := $(lib_objects:%.mm=%.o)
 lib_objects     := $(patsubst %,$(object_dir)/%,$(lib_objects))
 test_objects    := $(patsubst %,$(object_dir)/%,$(test_sources:.cc=.o))
 test_programs   := $(sort $(patsubst test/%.cc,test/%,$(test_sources)))
+test_suit_dir   := $(object_dir)-test
+test_programs2  := $(sort $(patsubst test/%.cc,$(test_suit_dir)/%,$(test_sources)))
 object_dirs     := $(call hi_uniquedirs,$(lib_objects)) \
-                   $(call hi_uniquedirs,$(test_objects))
+                   $(call hi_uniquedirs,$(test_objects)) \
+                   $(call hi_uniquedirs,$(test_programs2))
 
 # Library
 static_library 	:= "$(HI_LIB_PREFIX)"/lib$(project_id).a
@@ -70,15 +73,20 @@ $(lib_headers_dir)/%.h: src/%.h
 #   Test name-to-source maps: test/<name> -> src/<name>.test.cc
 test: c_flags += -DHI_TEST_SUIT_RUNNING=1 -O0
 test: cxx_flags += -DHI_TEST_SUIT_RUNNING=1 -O0
-test: $(test_programs)
+test: $(test_programs2)
+	@(cd test; \
+		for t in $^; do \
+		  n=`echo "$$t" | sed 's,$(test_suit_dir)/,test/,'`; \
+		  printf "\033[1;36;40mRunning $$n\033[0m ... "; \
+		  ("$$t" >/dev/null \
+		  && echo "\033[1;32;40mPASS\033[0m") || echo "\033[1;41;37m FAIL \033[0m"; \
+	  done)
+$(object_dir)-test/%: lib$(project_id) $(object_dir)/test/%.o
+	$(LD) $(HI_LDFLAGS) $(word 2,$^) -o $@
 test/%: lib$(project_id) $(object_dir)/test/%.o
-	@$(LD) $(HI_LDFLAGS) -arch x86_64 -L/Users/rasmus/src2/hi/build/lib-x86_64-debug -lc++ $(word 2,$^) -o $@
-	@printf "\033[1;36;40mRunning $@\033[0m ... "
-	@($@ >/dev/null && echo "\033[1;32;40mPASS\033[0m") || echo "\033[1;41;37m FAIL \033[0m"
-	@rm -f $(word 2,$^)
-#	@rm -f "$@-fail"
-#	@($@ >/dev/null && echo "\033[1;32;40mPASS\033[0m") || (echo "\033[1;41;37m FAIL \033[0m" ; mv "$@" "$@-fail" )
-# @rm -f $@ $^
+	$(LD) $(HI_LDFLAGS) $(word 2,$^) -o $@
+	@echo "\033[1;36;40mRunning $@\033[0m"
+	@$@
 
 -include ${test_objects:.o=.d}
 
