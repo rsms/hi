@@ -20,12 +20,14 @@ lib_objects     := $(lib_sources:%.c=%.o)
 lib_objects     := $(lib_objects:%.cc=%.o)
 lib_objects     := $(lib_objects:%.mm=%.o)
 lib_objects     := $(patsubst %,$(object_dir)/%,$(lib_objects))
-test_objects    := $(patsubst %,$(object_dir)/%,$(test_sources:.cc=.o))
 test_programs   := $(sort $(patsubst test/%.cc,test/%,$(test_sources)))
-test_suit_dir   := $(object_dir)-test
+test_objects    := $(patsubst %,$(object_dir)/%,$(test_sources:.cc=.o))
+test_suit_dir   := $(object_dir)/.testsuit
+test_objects2   := $(patsubst %,$(test_suit_dir)/%,$(test_sources:.cc=.o))
 test_programs2  := $(sort $(patsubst test/%.cc,$(test_suit_dir)/%,$(test_sources)))
 object_dirs     := $(call hi_uniquedirs,$(lib_objects)) \
                    $(call hi_uniquedirs,$(test_objects)) \
+                   $(call hi_uniquedirs,$(test_objects2)) \
                    $(call hi_uniquedirs,$(test_programs2))
 
 # Library
@@ -81,14 +83,18 @@ test: $(test_programs2)
 		  ("$$t" >/dev/null \
 		  && echo "\033[1;32;40mPASS\033[0m") || echo "\033[1;41;37m FAIL \033[0m"; \
 	  done)
-$(object_dir)-test/%: lib$(project_id) $(object_dir)/test/%.o
+$(test_suit_dir)/%: lib$(project_id) $(test_suit_dir)/%.o
 	$(LD) $(HI_LDFLAGS) $(word 2,$^) -o $@
 test/%: lib$(project_id) $(object_dir)/test/%.o
 	$(LD) $(HI_LDFLAGS) $(word 2,$^) -o $@
 	@echo "\033[1;36;40mRunning $@\033[0m"
 	@$@
 
+$(test_suit_dir)/%.o: test/%.cc
+	$(CXX) $(cxx_flags) -c -o $@ $<
+
 -include ${test_objects:.o=.d}
+-include ${test_objects2:.o=.d}
 
 # Dependencies
 ifneq ($(HI_WITH_OPENSSL),)
@@ -142,4 +148,4 @@ $(object_dir)/%.o: %.m
 # header dependencies
 -include ${lib_objects:.o=.d}
 
-.PHONY: clean common_pre $(project_id) lib$(project_id) test_pre test
+.PHONY: clean common_pre $(project_id) lib$(project_id) test
