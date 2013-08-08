@@ -33,8 +33,8 @@ bool sleep(double seconds);
 struct queue {
   queue(const std::string& label);
   // static queue current();
-  void resume() const;
-  void async(fun<void()>) const;
+  queue& resume() const;
+  queue& async(fun<void()>) const;
   bool is_current() const; // true if this is the calling queue
   const std::string& label() const;
   queue() : queue(nullptr) {};

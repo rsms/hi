@@ -41,7 +41,7 @@ void async(fun<void()> f) {
   #if !defined(__STDC_NO_THREADS__)
   std::async(std::launch::async, f);
   #else
-  #error not implemented
+  queue("async").async(f).resume(); // sloooowwwww
   #endif
 }
 
@@ -172,17 +172,18 @@ const std::string& queue::label() const {
 }
 
 
-void queue::resume() const {
+queue& queue::resume() const {
   assert(self != _main_queue_s);
   assert(self->thread == 0);
   int status = uv_thread_create(&self->thread, [](void* self) {
     static_cast<queue::S*>(self)->main();
   }, self);
   assert(status == 0); // todo: error
+  return const_cast<queue&>(*this);
 }
 
 
-void queue::async(fun<void()> b) const {
+queue& queue::async(fun<void()> b) const {
   uv_async_t* handle = new uv_async_t;
   handle->data = new fun<void()>(b);
   int r = uv_async_init(self->loop, handle, [](uv_async_t* handle, int status) {
@@ -204,6 +205,7 @@ void queue::async(fun<void()> b) const {
   r = uv_async_send(handle);
   assert(r == 0);
   self->wake_up_from_idle();
+  return const_cast<queue&>(*this);
 }
 
 
