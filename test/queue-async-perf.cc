@@ -22,21 +22,7 @@ void HI_NO_INLINE do_work() {
 
 void check_and_summarize(const char* label) {
   #if !HI_TEST_SUIT_RUNNING
-  double avg_user = ((double)rsample.delta_user_usec() * 1000.0) / N;
-  double avg_real = ((double)rsample.delta_real_usec() * 1000.0) / N;
-  print(
-    "%s:\n"
-    "  Per invocation:\n"
-    "    Average real time:     % 15.0f ns\n"
-    "    Average user CPU time: % 15.0f ns\n"
-    "    Syscall overhead:      % 15.1f %%"
-    "",
-    label,
-    avg_real,
-    avg_user,
-    (1.0 - (avg_user / avg_real)) * 100.0
-  );
-  rsample.delta_dump("  All invocations:", "    ");
+  rsample.delta_dumpn(N, label);
   #endif
 }
 

@@ -22,6 +22,7 @@ struct sample {
   uint64_t delta_user_usec() const;
   uint64_t delta_system_usec() const;
   void delta_dump(const char* label=0, const char* leading=0) const;
+  void delta_dumpn(size_t N, const char* label=0) const;
 private:
   // bool           _delta = false;
   struct rusage  r;
@@ -73,6 +74,37 @@ inline sample::~sample() {
   }
 }
 
+inline void sample::delta_dumpn(size_t N, const char* label) const {
+  struct rusage r2;
+  getrusage(RUSAGE_SELF, &r2);
+  struct timeval tv;
+  gettimeofday(&tv, 0);
+
+  double avg_real = ((double)(to_usec(tv) - to_usec(rtime)) * 1000.0) / N;
+  double avg_user = ((double)(to_usec(r2.ru_utime) - to_usec(r.ru_utime)) * 1000.0) / N;
+  double avg_sys  = ((double)(to_usec(r2.ru_stime) - to_usec(r.ru_stime)) * 1000.0) / N;
+
+  fprintf(stderr,
+    "%s:\n"
+    "  Average rate:              % 15.0f iterations/s\n"
+    "  Per iteration:\n"
+    "    Average real time:       % 15.0f ns\n"
+    "    Average user CPU time:   % 15.0f ns\n"
+    "    Average system CPU time: % 15.0f ns\n"
+    "    Syscall overhead:        % 15.1f %%"
+    "\n"
+    "  Total sum of all %zu iterations:\n",
+    label == 0 ? "Resource usage" : label,
+    1000000000.0 / avg_real,
+    avg_real,
+    avg_user,
+    avg_sys,
+    (avg_real <= avg_user) ? 0.0 : ((1.0 - (avg_user / avg_real)) * 100.0),
+    N
+  );
+  delta_dump(0, "    ");
+}
+
 inline static void dump_sample(
   const char* leader, const struct timeval& rtime, const struct rusage& r, bool is_delta)
 {
@@ -80,13 +112,13 @@ inline static void dump_sample(
   const char *ldr = (leader == nullptr) ? "" : leader;
 
   fprintf(stderr,
-    "%sReal time:             % 15.0f µs\n", ldr, (double)to_usec(rtime));
+    "%sReal time:               % 15.0f µs\n", ldr, (double)to_usec(rtime));
   fprintf(stderr,
-    "%sUser CPU time:         % 15.0f µs\n", ldr, (double)to_usec(r.ru_utime));
+    "%sUser CPU time:           % 15.0f µs\n", ldr, (double)to_usec(r.ru_utime));
   fprintf(stderr,
-    "%sSystem CPU time:       % 15.0f µs\n", ldr, (double)to_usec(r.ru_stime));
+    "%sSystem CPU time:         % 15.0f µs\n", ldr, (double)to_usec(r.ru_stime));
   fprintf(stderr,
-    "%sMemory resident usage: % 15ld B\n", ldr, r.ru_maxrss);
+    "%sMemory resident usage:   % 15ld B\n", ldr, r.ru_maxrss);
   
   // #if HI_RUSAGE_SAMPLE_DETAILED
   fprintf(stderr,
