@@ -63,6 +63,11 @@
 #else
   #define HI_ALWAYS_INLINE
 #endif
+#if __has_attribute(noinline)
+  #define HI_NO_INLINE __attribute__((noinline))
+#else
+  #define HI_NO_INLINE
+#endif
 #if __has_attribute(unused)
   // Attached to a function, means that the function is meant to be possibly
   // unused. The compiler will not produce a warning for this function.
@@ -122,6 +127,7 @@
 #include <errno.h>
 #include <string.h>
 #include <err.h>
+#include <math.h>
 #if HI_HOST_OS_POSIX
   #include <unistd.h>
 #endif

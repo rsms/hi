@@ -5,7 +5,7 @@ include $(shell HI_DEBUG="$(DEBUG)" ./build_config.sh)
 
 # Sources
 lib_sources  := $(wildcard src/*.cc)
-lib_headers  := $(patsubst src/%,%,$(wildcard src/common*.h)) hi.h
+lib_headers  := $(patsubst src/%,%,$(wildcard src/common*.h)) hi.h rusage.h
 test_sources := $(wildcard test/*.cc)
 
 # --- conf ---------------------------------------------------------------------
@@ -72,11 +72,14 @@ test: c_flags += -DHI_TEST_SUIT_RUNNING=1 -O0
 test: cxx_flags += -DHI_TEST_SUIT_RUNNING=1 -O0
 test: $(test_programs)
 test/%: lib$(project_id) $(object_dir)/test/%.o
-	$(LD) $(HI_LDFLAGS) -arch x86_64 -L/Users/rasmus/src2/hi/build/lib-x86_64-debug -lc++ $(word 2,$^) -o $@
+	@$(LD) $(HI_LDFLAGS) -arch x86_64 -L/Users/rasmus/src2/hi/build/lib-x86_64-debug -lc++ $(word 2,$^) -o $@
 	@printf "\033[1;36;40mRunning $@\033[0m ... "
-	@($@ >/dev/null && echo "\033[1;32;40mPASS\033[0m") || (echo "\033[1;41;37m FAIL \033[0m" ; mv $@ $@-fail )
-	@rm -f $@ $^
-# ld -lc++ -luv -lleveldb -lssl '-Lbuild/lib-x86_64-debug' -lhi build/.objs-x86_64-debug/test/once.o -o test/once
+	@($@ >/dev/null && echo "\033[1;32;40mPASS\033[0m") || echo "\033[1;41;37m FAIL \033[0m"
+	@rm -f $(word 2,$^)
+#	@rm -f "$@-fail"
+#	@($@ >/dev/null && echo "\033[1;32;40mPASS\033[0m") || (echo "\033[1;41;37m FAIL \033[0m" ; mv "$@" "$@-fail" )
+# @rm -f $@ $^
+
 -include ${test_objects:.o=.d}
 
 # Dependencies

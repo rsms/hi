@@ -23,6 +23,12 @@
 
 namespace hi {
 
+// ------------------------------------------------------------------------------------------------
+
+static error loop_error(uv_loop_t* loop) {
+  uv_err_t e = uv_last_error(loop);
+  return error(std::string(uv_err_name(e)) + ": " + uv_strerror(e), e.code);
+}
 
 // ------------------------------------------------------------------------------------------------
 //                                            async
@@ -41,42 +47,51 @@ void async(fun<void()> f) {
 
 
 // ------------------------------------------------------------------------------------------------
+//                                              misc
+// ------------------------------------------------------------------------------------------------
+#pragma mark - misc
+
+
+bool sleep(double seconds) {
+  double sec = ::floor(seconds);
+  struct timespec rqtp = {
+    .tv_sec = static_cast<time_t>(sec),
+    .tv_nsec = static_cast<long>((seconds - sec) * 1000000000.0)
+  };
+  return ::nanosleep(&rqtp, NULL) == EINTR;
+}
+
+
+// Hint to reschedule the execution of queues. Yield some time for other queues.
+// void yield() {
+// #if !defined(__STDC_NO_THREADS__)
+//   std::this_thread::yield();
+// #else
+//   struct timespec rqtp = {.tv_sec = 0, .tv_nsec = 1};
+//   ::nanosleep(&rqtp, NULL);
+// #endif
+// }
+
+
+// ------------------------------------------------------------------------------------------------
 //                                            queue
 // ------------------------------------------------------------------------------------------------
 #pragma mark - queue
 
-static queue_* volatile _main_queue = 0;
-static queue _main_queue_ref;
+static queue::S* volatile _main_queue_s = 0;
+static queue _main_queue(nullptr);
 
-
-static error loop_error(uv_loop_t* loop) {
-  uv_err_t e = uv_last_error(loop);
-  return error(std::string(uv_err_name(e)) + ": " + uv_strerror(e), e.code);
-}
-
-
-struct queue_::impl {
-  impl(const std::string& l): label(l) {
-    loop = uv_loop_new();
-    int r = uv_sem_init(&idle_sem, 0);
-    assert(r == 0);
-  }
-
-  ~impl() {
-    std::cout << "queue_::impl::~impl()\n";
-    uv_loop_delete(loop);
-  }
-
+struct queue::S {
   void wake_up_from_idle() {
     if (is_idle != 0 && hi_atomic_swap(&is_idle, 0) == 1) {
-      printf("[queue_::impl] uv_sem_post(&idle_sem)\n");
+      printf("[queue::S] uv_sem_post(&idle_sem)\n");
       uv_sem_post(&idle_sem);
     }
   }
 
   int main() {
     thread_id = uv_thread_self();
-    printf("ENTER queue_::impl::main T=%lu\n", thread_id);
+    printf("ENTER queue::S::main T=%lu\n", thread_id);
 
     stopped = 0;
     while (stopped == 0) {
@@ -96,7 +111,7 @@ struct queue_::impl {
 
    exit_loop:
     uv_stop(loop);
-    printf("EXIT queue_::impl::main T=%lu\n", thread_id);
+    printf("EXIT queue::S::main T=%lu\n", thread_id);
     delete this;
     return 0;
   }
@@ -105,6 +120,8 @@ struct queue_::impl {
     hi_atomic_swap(&stopped, 1);
     wake_up_from_idle();
   }
+
+  S(const std::string& l): label(l), loop(uv_loop_new()) {}
 
   std::string   label;
   uv_thread_t   thread;
@@ -126,43 +143,49 @@ struct queue_::impl {
 };
 
 
-queue queue_::create(const std::string& label) {
-  return std::make_shared<queue_>(new impl(label));
-  // return queue(new queue_(new impl(label)));
+queue::queue(const std::string& label) : queue(new S(label)) {
+  int r = uv_sem_init(&self->idle_sem, 0);
+  assert(r == 0);
 }
 
 
-queue_::~queue_() {
-  std::cout << "queue_::~queue_()\n";
-  if (_impl->stopped != 0) {
-    // Has a thread running. Stop that thread and let impl::main() delete _impl
+void queue::dealloc(S* self) {
+  if (self->stopped != 0) {
+    // Has a thread running. Stop that thread and let impl::main() delete self
     // when the thread has been properly stopped.
-    _impl->stop();
+    self->stop();
   } else {
-    delete _impl;
+    uv_loop_delete(self->loop);
+    delete self;
   }
 }
 
+inline static uv_loop_t* queue_loop(const queue& q) { return q->self->loop; }
 
-bool queue_::is_current() const {
-  return (_impl->thread_id == uv_thread_self());
+
+bool queue::is_current() const {
+  return (self->thread_id == uv_thread_self());
+}
+
+const std::string& queue::label() const {
+  return self->label;
 }
 
 
-void queue_::resume() {
-  assert(this != _main_queue);
-  assert(_impl->thread == 0);
-  int status = uv_thread_create(&_impl->thread, [](void* impl) {
-    static_cast<queue_::impl*>(impl)->main();
-  }, _impl);
-  assert(status == 0);
+void queue::resume() const {
+  assert(self != _main_queue_s);
+  assert(self->thread == 0);
+  int status = uv_thread_create(&self->thread, [](void* self) {
+    static_cast<queue::S*>(self)->main();
+  }, self);
+  assert(status == 0); // todo: error
 }
 
 
-void queue_::async(fun<void()> b) {
+void queue::async(fun<void()> b) const {
   uv_async_t* handle = new uv_async_t;
   handle->data = new fun<void()>(b);
-  int r = uv_async_init(_impl->loop, handle, [](uv_async_t* handle, int status) {
+  int r = uv_async_init(self->loop, handle, [](uv_async_t* handle, int status) {
     fun<void()>* b = (fun<void()>*)handle->data;
     if (b != 0) {
       // Since libuv says this could be called more than once
@@ -180,46 +203,42 @@ void queue_::async(fun<void()> b) {
   assert(r == 0);
   r = uv_async_send(handle);
   assert(r == 0);
-  _impl->wake_up_from_idle();
+  self->wake_up_from_idle();
 }
 
 
-queue main_queue() {
-  if (_main_queue == 0) {
-    queue_* q = new queue_(new queue_::impl("main"));
-    if (!hi_atomic_cas_bool(&_main_queue, 0, q)) {
+queue& main_queue() {
+  if (_main_queue_s == 0) {
+    queue q = queue("main");
+    if (!hi_atomic_cas_bool(&_main_queue_s, 0, q->self)) {
       // someone else was faster than us
-      delete q;
     } else {
-      _main_queue_ref.reset(_main_queue);
+      _main_queue = q;
     }
   }
-  return _main_queue_ref;
+  return _main_queue;
 }
 
 // queue queue::current() {
 //   return nullptr;
 // }
 
-// void main_exit() {
-//   main_queue()->_impl->stop();
-// }
 
 int main_loop() {
 #if 0 // no auto-exit when empty
-  return main_queue()->_impl->main();
+  return main_queue()->self->main();
 #else
-  uv_run(main_queue()->_impl->loop, UV_RUN_DEFAULT);
+  uv_run(main_queue()->self->loop, UV_RUN_DEFAULT);
   return 0;
 #endif
 }
 
 bool main_next() {
-  return (uv_run(main_queue()->_impl->loop, UV_RUN_ONCE) != 0);
+  return (uv_run(main_queue()->self->loop, UV_RUN_ONCE) != 0);
 }
 
 bool main_next_nowait() {
-  return (uv_run(main_queue()->_impl->loop, UV_RUN_NOWAIT) != 0);
+  return (uv_run(main_queue()->self->loop, UV_RUN_NOWAIT) != 0);
 }
 
 
@@ -663,7 +682,7 @@ static void connect_tcp_on_open(uv_connect_t* req, int status) {
 
 static void connect_tcp_step2(const queue& q, channel ch, struct sockaddr* sa,
                               channel_connect_cb cb) {
-  uv_loop_t* loop = q->_impl->loop;
+  uv_loop_t* loop = queue_loop(q);
   uv_tcp_t* tcp_stream = new uv_tcp_t;
   tcp_stream->data = ch.self;
   ch.self->_stream = (uv_stream_t*)tcp_stream;
@@ -753,11 +772,11 @@ static void connect_tcp(const queue& q, channel ch, const std::string& endpoint,
 
   // Dispatch
   // TODO: check q->is_current() and if not, we have to do this in the appropriate queue
-  int r = uv_getaddrinfo(q->_impl->loop, &job->req, &dns_on_resolve, hostname.c_str(), port.c_str(),
+  int r = uv_getaddrinfo(queue_loop(q), &job->req, &dns_on_resolve, hostname.c_str(), port.c_str(),
                          0);
   if (r != 0) {
     delete job;
-    cb(loop_error(q->_impl->loop), ch);
+    cb(loop_error(queue_loop(q)), ch);
   }
 }
 

@@ -3,7 +3,7 @@
 *.d
 build
 lab
-test/*-fail
+test/*
 .build_config.mk
 deps/openssl
 *.gz

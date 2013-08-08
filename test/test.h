@@ -1,4 +1,13 @@
 // Helpers for tests
+//
+// assert_eq(a, b)
+// assert_not_eq(a, b)
+// assert_eq_cstr(a, b)
+// assert_true(a)
+// assert_false(a)
+// assert_null(a)
+// assert_not_null(a)
+//
 #ifndef _HI_TEST_H_
 #define _HI_TEST_H_
 
@@ -25,36 +34,51 @@
 
 namespace hi {
 
-template <typename A, typename B>
-inline void HI_UNUSED _assert_eq(
+template <typename A, typename B> inline void HI_UNUSED _assert_fail(
     A value1, const char* name1,
     B value2, const char* name2,
+    const char* op,
     const char* source_name, int source_line)
 {
-  if (!(value1 == value2)) {
     std::cerr << "\nAssertion failure at "
               << source_name << ":" << source_line << "\n"
-              << "  " << name1 << " == " << name2 << "\n"
-              << "  " << value1 << " == " << value2
+              << "  " << name1 << " " << op << " " << name2 << "\n"
+              << "  " << value1 << " " << op << " " << value2
               << std::endl;
+    std::cerr.flush();
     _exit(30);
-  }
 }
 
-template <typename A, typename B>
-inline void HI_UNUSED _assert_not_eq(
+template <typename A, typename B> inline void HI_UNUSED _assert_eq(
     A value1, const char* name1,
     B value2, const char* name2,
     const char* source_name, int source_line)
 {
-  if (!(value1 != value2)) {
-    std::cerr << "\nAssertion failure at "
-              << source_name << ":" << source_line << "\n"
-              << "  " << name1 << " != " << name2 << "\n"
-              << "  " << value1 << " != " << value2
-              << std::endl;
-    _exit(30);
-  }
+  if (!(value1 == value2))
+    _assert_fail(value1, name1, value2, name2, "==", source_name, source_line);
+}
+
+template <typename A, typename B> inline void HI_UNUSED _assert_not_eq(
+    A value1, const char* name1,
+    B value2, const char* name2,
+    const char* source_name, int source_line)
+{
+  if (!(value1 != value2))
+    _assert_fail(value1, name1, value2, name2, "!=", source_name, source_line);
+}
+
+template <typename A> inline void HI_UNUSED _assert_null(
+    A v, const char* name, const char* source_name, int source_line)
+{
+  if (!(v == (A)nullptr))
+    _assert_fail(v, name, (A)nullptr, "nullptr", "==", source_name, source_line);
+}
+
+template <typename A> inline void HI_UNUSED _assert_not_null(
+    A v, const char* name, const char* source_name, int source_line)
+{
+  if (!(v != (A)nullptr))
+    _assert_fail(v, name, (A)nullptr, "nullptr", "!=", source_name, source_line);
 }
 
 inline void HI_UNUSED _assert_eq_cstr(
@@ -75,9 +99,10 @@ inline void HI_UNUSED _assert_eq_cstr(
 #define assert_eq(a, b) ::hi::_assert_eq((a), #a, (b), #b, HI_FILENAME, __LINE__)
 #define assert_not_eq(a, b) ::hi::_assert_not_eq((a), #a, (b), #b, HI_FILENAME, __LINE__)
 #define assert_eq_cstr(a, b) ::hi::_assert_eq_cstr((a), #a, (b), #b, HI_FILENAME, __LINE__)
-#define assert_true(a) ::hi::_assert_eq((a), #a, true, "true", HI_FILENAME, __LINE__)
-#define assert_false(a) ::hi::_assert_eq((a), #a, false, "false", HI_FILENAME, __LINE__)
-#define assert_null(a) ::hi::_assert_eq((a), #a, nullptr, "NULL", HI_FILENAME, __LINE__)
+#define assert_true(a) ::hi::_assert_eq((bool)(a), #a, true, "true", HI_FILENAME, __LINE__)
+#define assert_false(a) ::hi::_assert_eq((bool)(a), #a, false, "false", HI_FILENAME, __LINE__)
+#define assert_null(a) ::hi::_assert_null((a), #a, HI_FILENAME, __LINE__)
+#define assert_not_null(a) ::hi::_assert_not_null((a), #a, HI_FILENAME, __LINE__)
 
 } // namespace
 #endif // __cplusplus

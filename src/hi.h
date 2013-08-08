@@ -5,12 +5,11 @@
 
 namespace hi {
 
-template <typename T> using ref = ::std::shared_ptr<T>;
-struct queue_; typedef ref<queue_>     queue;
 struct error;
+struct queue;
 struct channel;
 struct tls_context;
-struct data_; typedef ref<data_>       data;
+struct data_; typedef ::std::shared_ptr<data_> data;
 template <typename T> using fun = ::std::function<T>;
 
 // Call a function exactly and only once per once_flag object
@@ -18,7 +17,7 @@ struct once_flag; template<class Function, typename... Args>
 void once(once_flag&, Function&&, Args&&...);
 
 // The main queue
-queue main_queue();
+queue& main_queue();
 int   main_loop();  // Enter the main queue run loop
 bool  main_next();  // Run events in the main queue. Blocks if the queue is empty. Returns true if
                     // there are more events waiting to be processed.
@@ -27,13 +26,19 @@ bool  main_next_nowait(); // Does not block in the case there are no queued even
 // Execute a function in some background thread
 void async(fun<void()>);
 
-struct queue_ : std::enable_shared_from_this<queue_> {
-  static queue create(const std::string& label);
+// Suspend the calling queue for `seconds` time. Returns true if interrupted.
+bool sleep(double seconds);
+
+// Serial processing queue
+struct queue {
+  queue(const std::string& label);
   // static queue current();
-  void resume();
-  void async(fun<void()>);
+  void resume() const;
+  void async(fun<void()>) const;
   bool is_current() const; // true if this is the calling queue
-  struct impl; impl* _impl = 0; queue_(impl* i) : _impl(i) {} ~queue_();
+  const std::string& label() const;
+  queue() : queue(nullptr) {};
+  HI_REF_MIXIN(queue)
 };
 
 struct semaphore {
