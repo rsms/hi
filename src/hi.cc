@@ -227,20 +227,26 @@ queue& main_queue() {
 
 
 int main_loop() {
+  main_queue();
 #if 0 // no auto-exit when empty
-  return main_queue()->self->main();
+  return _main_queue_s->main();
 #else
-  uv_run(main_queue()->self->loop, UV_RUN_DEFAULT);
+  _main_queue_s->thread_id = uv_thread_self();
+  uv_run(_main_queue_s->loop, UV_RUN_DEFAULT);
   return 0;
 #endif
 }
 
 bool main_next() {
-  return (uv_run(main_queue()->self->loop, UV_RUN_ONCE) != 0);
+  main_queue();
+  _main_queue_s->thread_id = uv_thread_self();
+  return (uv_run(_main_queue_s->loop, UV_RUN_ONCE) != 0);
 }
 
 bool main_next_nowait() {
-  return (uv_run(main_queue()->self->loop, UV_RUN_NOWAIT) != 0);
+  main_queue();
+  _main_queue_s->thread_id = uv_thread_self();
+  return (uv_run(_main_queue_s->loop, UV_RUN_NOWAIT) != 0);
 }
 
 

@@ -37,6 +37,9 @@ int main(int argc, char** argv) {
     hi::sleep(0.05); // make sure "Q2" is empty before we execute
     assert_true(q2_did_run);
   });
+  main_queue().async([]{
+    assert_true(main_queue().is_current());
+  });
 
   return main_loop();
 }
