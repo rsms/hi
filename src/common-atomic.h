@@ -66,6 +66,14 @@ T hi_atomic_cas(T* ptr, T oldval, T newval)
       : "m" (*operand), "r" (delta)
     );
   }
+  #ifdef __cplusplus
+  inline static void HI_UNUSED hi_atomic_add32(uint32_t* o, uint32_t d) {
+    hi_atomic_add32((int32_t*)o, static_cast<int32_t>(d)); }
+  inline static void HI_UNUSED hi_atomic_add32(volatile int32_t* o, volatile int32_t d) {
+    hi_atomic_add32((int32_t*)o, static_cast<int32_t>(d)); }
+  inline static void HI_UNUSED hi_atomic_add32(volatile uint32_t* o, volatile uint32_t d) {
+    hi_atomic_add32((int32_t*)o, static_cast<int32_t>(d)); }
+  #endif
 #elif _HI_ATOMIC_HAS_SYNC_BUILTINS
   #define hi_atomic_add32 __sync_add_and_fetch
 #else
