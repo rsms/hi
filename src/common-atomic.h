@@ -17,7 +17,7 @@ T hi_atomic_sub_fetch(T* operand, T delta)
 
 bool hi_atomic_cas_bool(T* ptr, T oldval, T newval)
   If the current value of *ptr is oldval, then write newval into *ptr. Returns true if the
-  operation is successful and newval was written.
+  operation was successful and newval was written.
 
 T hi_atomic_cas(T* ptr, T oldval, T newval)
   If the current value of *ptr is oldval, then write newval into *ptr. Returns the contents of
@@ -122,6 +122,14 @@ T hi_atomic_cas(T* ptr, T oldval, T newval)
     __sync_val_compare_and_swap((ptr), (oldval), (newval))
 #else
   #error "Unsupported compiler: Missing support for atomic operations"
+#endif
+
+
+// void hi_atomic_barrier()
+#if HI_WITHOUT_SMP
+#define hi_atomic_barrier() do{}while(0)
+#else
+#define hi_atomic_barrier() __sync_synchronize()
 #endif
 
 

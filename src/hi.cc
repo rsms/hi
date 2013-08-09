@@ -10,6 +10,8 @@
 #if !defined(__STDC_NO_THREADS__)
 #include <thread>
 #include <future>
+#include <condition_variable>
+#include <mutex>
 #endif
 
 // For thread-local data storage
@@ -78,47 +80,55 @@ bool sleep(double seconds) {
 // ------------------------------------------------------------------------------------------------
 #pragma mark - queue
 
-static queue::S* volatile _main_queue_s = 0;
 static queue _main_queue(nullptr);
+static unsigned long _main_thread_id = 0;
 
-struct queue::S {
+struct queue::S : ref_counted {
   void wake_up_from_idle() {
-    if (is_idle != 0 && hi_atomic_swap(&is_idle, 0) == 1) {
-      printf("[queue::S] uv_sem_post(&idle_sem)\n");
+    // printf("[queue::S::wake_up_from_idle %lu]\n", thread_id);
+    if (is_idle && hi_atomic_cas_bool(&is_idle, true, false)) {
+      // printf("[queue::S::wake_up_from_idle]\n");
       uv_sem_post(&idle_sem);
     }
   }
 
-  int main() {
+  // Called by queue::resume() and comprises the runloop of a queue
+  void main() {
+    // Note: Until we return from this function we are guaranteed to hold a reference to self.
     thread_id = uv_thread_self();
-    printf("ENTER queue::S::main T=%lu\n", thread_id);
+    // printf("[queue::S::main %lu] enter\n", thread_id);
 
-    stopped = 0;
-    while (stopped == 0) {
-      // printf("run\n");
-      while (uv_run(loop, UV_RUN_ONCE) != 0) {
-        if (stopped != 0) {
-          goto exit_loop;
-        }
-        // printf("process more events (stopped=%ld)\n", stopped);
+    while (!stopped) {
+      while (uv_run(loop, UV_RUN_ONCE) != 0 && stopped == false) {
+        // There're more events to process
       }
       // No queued events
-      printf("idle\n");
-
-      is_idle = 1;
-      uv_sem_wait(&idle_sem);
+      if (dealloc_after_runloop) {
+        set_stopped(true);
+      } else if (hi_atomic_cas_bool(&is_idle, false, true)) {
+        uv_sem_wait(&idle_sem);
+        if (dealloc_after_runloop) {
+          set_stopped(true);
+        }
+      }
     }
 
-   exit_loop:
+    assert(stopped == true);
     uv_stop(loop);
-    printf("EXIT queue::S::main T=%lu\n", thread_id);
-    delete this;
-    return 0;
+    // printf("[queue::S::main %lu] exit\n", thread_id);
   }
 
-  void stop() {
-    hi_atomic_swap(&stopped, 1);
-    wake_up_from_idle();
+  void set_is_idle(bool b) {
+    hi_atomic_barrier();
+    is_idle = b;
+  }
+  void set_stopped(bool b) {
+    hi_atomic_barrier();
+    stopped = b;
+  }
+  void set_dealloc_after_runloop(bool b) {
+    hi_atomic_barrier();
+    dealloc_after_runloop = b;
   }
 
   S(const std::string& l): label(l), loop(uv_loop_new()) {}
@@ -129,17 +139,9 @@ struct queue::S {
   uv_loop_t*    loop;
   uv_idle_t     loop_idler;
   uv_sem_t      idle_sem;
-  volatile long is_idle = 0;
-  volatile long stopped = 1;
-
-  // struct data_pool_ {
-  //   struct ent {
-  //     const char* bytes;
-  //     size_t size;
-  //   };
-  //   size_t                 sum_size = 0;
-  //   std::forward_list<ent> list;
-  // } data_pool;
+  volatile bool is_idle = false;
+  volatile bool stopped = true;
+  volatile bool dealloc_after_runloop = false;
 };
 
 
@@ -150,14 +152,33 @@ queue::queue(const std::string& label) : queue(new S(label)) {
 
 
 void queue::dealloc(S* self) {
-  if (self->stopped != 0) {
-    // Has a thread running. Stop that thread and let impl::main() delete self
-    // when the thread has been properly stopped.
-    self->stop();
-  } else {
+  if (self->stopped) {
+    // printf("[queue::dealloc %lu] deleting\n", self->thread_id);
     uv_loop_delete(self->loop);
     delete self;
+  } else {
+    // the runloop is still alive and possibly in an idle state
+    self->set_dealloc_after_runloop(true);
+    self->wake_up_from_idle();
   }
+}
+
+
+struct _main_thread_id_initializer {
+  _main_thread_id_initializer() { _main_thread_id = uv_thread_self(); }
+} _main_thread_id_initializer_;
+
+
+queue& main_queue() {
+  if (_main_queue->self == nullptr) {
+    queue::S* s = new queue::S("main");
+    s->thread_id = _main_thread_id;
+    if (!hi_atomic_cas_bool(&_main_queue->self, nullptr, s)) {
+      // someone else was faster than us
+      delete s;
+    }
+  }
+  return _main_queue;
 }
 
 inline static uv_loop_t* queue_loop(const queue& q) { return q->self->loop; }
@@ -173,12 +194,18 @@ const std::string& queue::label() const {
 
 
 queue& queue::resume() const {
-  assert(self != _main_queue_s);
+  assert(self != _main_queue->self);
   assert(self->thread == 0);
-  int status = uv_thread_create(&self->thread, [](void* self) {
-    static_cast<queue::S*>(self)->main();
+  int status = uv_thread_create(&self->thread, [](void* p) {
+    queue::S* self = static_cast<queue::S*>(p);
+    self->main();
+    self->thread = 0;
+    if (self->dealloc_after_runloop) {
+      queue::dealloc(self);
+    }
   }, self);
   assert(status == 0); // todo: error
+  self->set_stopped(false);
   return const_cast<queue&>(*this);
 }
 
@@ -208,45 +235,26 @@ queue& queue::async(fun<void()> b) const {
   return const_cast<queue&>(*this);
 }
 
-
-queue& main_queue() {
-  if (_main_queue_s == 0) {
-    queue q = queue("main");
-    if (!hi_atomic_cas_bool(&_main_queue_s, 0, q->self)) {
-      // someone else was faster than us
-    } else {
-      _main_queue = q;
-    }
-  }
-  return _main_queue;
-}
-
 // queue queue::current() {
 //   return nullptr;
 // }
 
 
 int main_loop() {
-  main_queue();
 #if 0 // no auto-exit when empty
-  return _main_queue_s->main();
+  return main_queue().self->main();
 #else
-  _main_queue_s->thread_id = uv_thread_self();
-  uv_run(_main_queue_s->loop, UV_RUN_DEFAULT);
+  uv_run(main_queue().self->loop, UV_RUN_DEFAULT);
   return 0;
 #endif
 }
 
 bool main_next() {
-  main_queue();
-  _main_queue_s->thread_id = uv_thread_self();
-  return (uv_run(_main_queue_s->loop, UV_RUN_ONCE) != 0);
+  return (uv_run(main_queue().self->loop, UV_RUN_ONCE) != 0);
 }
 
 bool main_next_nowait() {
-  main_queue();
-  _main_queue_s->thread_id = uv_thread_self();
-  return (uv_run(_main_queue_s->loop, UV_RUN_NOWAIT) != 0);
+  return (uv_run(main_queue().self->loop, UV_RUN_NOWAIT) != 0);
 }
 
 
@@ -255,8 +263,19 @@ bool main_next_nowait() {
 // ------------------------------------------------------------------------------------------------
 #pragma mark - semaphore
 
-
-struct semaphore::S {
+// #if defined(__STDC_NO_THREADS__)
+// struct semaphore::S : ref_counted {};
+// semaphore::semaphore(unsigned int value) : semaphore(nullptr) { HI_NOT_IMPLEMENTED; }
+// void semaphore::dealloc(S* self) {}
+// void semaphore::signal() const {}
+// void semaphore::wait() const {}
+// #else
+// struct semaphore::S : ref_counted {
+//   std::mutex              m;
+//   std::condition_variable cv;
+// };
+// #endif
+struct semaphore::S : ref_counted {
   uv_sem_t sem;
 };
 
@@ -264,11 +283,6 @@ semaphore::semaphore(unsigned int value) : semaphore(new S) { uv_sem_init(&self-
 void semaphore::dealloc(S* self) { uv_sem_destroy(&self->sem); delete self; }
 void semaphore::signal() const { uv_sem_post(&self->sem); }
 void semaphore::wait() const { uv_sem_wait(&self->sem); }
-// int uv_sem_init(uv_sem_t* sem, unsigned int value);
-// void uv_sem_destroy(uv_sem_t* sem);
-// void uv_sem_post(uv_sem_t* sem);
-// void uv_sem_wait(uv_sem_t* sem);
-// int uv_sem_trywait(uv_sem_t* sem);
 
 
 // ------------------------------------------------------------------------------------------------
@@ -322,7 +336,6 @@ tls_context::tls_context() : tls_context(new S) {
 
 
 void tls_context::dealloc(S* self) {
-  // std::cerr << "tls_context::dealloc @ " << (void*)self << "\n";
   SSL_CTX_free(self->ssl_handle);
   delete self;
 }
@@ -376,7 +389,7 @@ struct channel::S : ref_counted {
       }
     }
     void end() {
-      std::cerr << "read_context::end @ " << (void*)this << " self=" << (void*)ch->self << "\n";
+      // std::cerr << "read_context::end @ " << (void*)this << " self=" << (void*)ch->self << "\n";
       if (ch != nullptr) {
         stop();
 
@@ -427,7 +440,7 @@ channel::channel() : self(0) {}
 
 
 void channel::dealloc(S* self) {
-  std::cerr << "channel::dealloc @ " << (void*)self << "\n";
+  // std::cerr << "channel::dealloc @ " << (void*)self << "\n";
   if (self->_stream != 0) { delete self->_stream; }
   if (self->tls) { delete self->tls; }
   delete self;
@@ -470,7 +483,11 @@ std::string channel::endpoint_name() const {
 }
 
 
-#define TLS_TRACE std::cout << "[tls] " << HI_FILENAME << ":" << __LINE__ << "\n";
+#if HI_DEBUG_TLS
+  #define TLS_TRACE std::cout << "[tls] " << HI_FILENAME << ":" << __LINE__ << "\n";
+#else
+  #define TLS_TRACE
+#endif
 
 
 static const size_t tls_init_read_buf_size = 2048;
@@ -513,7 +530,7 @@ static void tls_flush_out_bio(channel::S* self) {
     char* buf = p + sizeof(uv_write_t);
 
     int bytes_read = BIO_read(out_bio, buf, BUF_SIZE);
-    std::cout << "flush_out_bio(): bytes_read => " << bytes_read << "\n";
+    // std::cout << "flush_out_bio(): bytes_read => " << bytes_read << "\n";
     if (bytes_read < 1) {
       // buffer is empty
       free((void*)req);
@@ -540,10 +557,11 @@ static void tls_flush_out_bio(channel::S* self) {
 static void tls_client_negotiate(channel::S* self) {
   // Negotiate the TLS handshake with a TLS server
   channel::S::tls_session& tls = *self->tls;
-  std::cout << "[tls_negotiate] SSL_is_init_finished => " << SSL_is_init_finished(tls.session) << "\n";
+  // std::cout << "[tls_negotiate] SSL_is_init_finished => "
+  //           << SSL_is_init_finished(tls.session) << "\n";
   
   int r = SSL_connect(tls.session);
-  std::cout << "[tls_negotiate] SSL_connect => " << r << "\n";
+  // std::cout << "[tls_negotiate] SSL_connect => " << r << "\n";
 
   if (r < 0) {
     // Still negotiating the connection
@@ -618,7 +636,7 @@ static void tls_client_init(const channel& ch) {
     [](uv_stream_t* stream, ssize_t nread, uv_buf_t buf) {
       channel::S* self = static_cast<channel::S*>(stream->data);
       channel::S::tls_session& tls = *self->tls;
-      std::cout << "[tls/negotiate/read] " << nread << "\n";
+      // std::cout << "[tls/negotiate/read] " << nread << "\n";
       switch (nread) {
         case -1: {
           uv_read_stop(stream);
@@ -636,7 +654,7 @@ static void tls_client_init(const channel& ch) {
         }
         default: {
           int written = BIO_write(tls.in_bio, buf.base, nread);
-          std::cout << "[tls/read] BIO_write => " << written << "\n";
+          // std::cout << "[tls/read] BIO_write => " << written << "\n";
           assert(written >= 0); // since its in memory-mode writing should never fail
           assert(tls.is_initiated() == false);
           tls_client_negotiate(self);
@@ -947,10 +965,10 @@ void channel::read(size_t max_size, channel_read_cb cb) const {
             // TLS is active - filter through BIO
             int written = BIO_write(self->tls->in_bio, d->bytes(), d->size());
             assert(written >= 0); // since its in memory-mode writing should never fail
-            std::cout << "[read] BIO_write => " << written << "\n";
+            // std::cout << "[read] BIO_write => " << written << "\n";
             // Cause data in in_bio to be decoded and placed back into `d`
             int nread2 = SSL_read(self->tls->session, d->bytes(), d->capacity());
-            std::cout << "[read] SSL_read(*, " << d->capacity() << ") => " << nread2 << "\n";
+            // std::cout << "[read] SSL_read(*, " << d->capacity() << ") => " << nread2 << "\n";
             if (nread2 < 0) {
               self->_rctx.cb(tls_error(), d);
               self->_rctx.end();

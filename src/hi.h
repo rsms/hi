@@ -37,14 +37,22 @@ struct queue {
   queue& async(fun<void()>) const;
   bool is_current() const; // true if this is the calling queue
   const std::string& label() const;
-  queue() : queue(nullptr) {};
+  queue() : self(nullptr) {};
   HI_REF_MIXIN(queue)
 };
 
 struct semaphore {
   semaphore(unsigned int value = 0);
-  void signal() const;
+  
+  // Decrements the value of semaphore variable by 1. If the value becomes negative, the queue
+  // executing wait() is blocked, i.e., added to the semaphore's waiting queue.
   void wait() const;
+
+  // Increments the value of semaphore variable by 1. After the increment, if the pre-increment
+  // value was negative (meaning there are queues waiting), it transfers a blocked queue from the
+  // semaphore's waiting queue to the ready queue.
+  void signal() const;
+
   HI_REF_MIXIN(semaphore)
 };
 

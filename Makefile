@@ -73,22 +73,28 @@ $(lib_headers_dir)/%.h: src/%.h
 #   To run a specific test:
 #      make test/foo
 #   Test name-to-source maps: test/<name> -> src/<name>.test.cc
-test: c_flags += -DHI_TEST_SUIT_RUNNING=1 -O0
-test: cxx_flags += -DHI_TEST_SUIT_RUNNING=1 -O0
+test: c_flags   += -DHI_TEST_SUIT_RUNNING=1 -DHI_IS_TEST=1
+test: cxx_flags += -DHI_TEST_SUIT_RUNNING=1 -DHI_IS_TEST=1
 test: $(test_programs2)
 	@(cd test; \
 		for t in $^; do \
 		  n=`echo "$$t" | sed 's,$(test_suit_dir)/,test/,'`; \
 		  printf "\033[1;36;40mRunning $$n\033[0m ... "; \
-		  ("$$t" >/dev/null \
-		  && echo "\033[1;32;40mPASS\033[0m") || echo "\033[1;41;37m FAIL \033[0m"; \
+		  if ("$$t" >/dev/null); then \
+		    echo "\033[1;32;40mPASS\033[0m"; \
+	    else \
+	      echo "\033[1;41;37m FAIL \033[0m"; \
+	      exit $$?; \
+	    fi; \
 	  done)
 $(test_suit_dir)/%: lib$(project_id) $(test_suit_dir)/%.o
 	$(LD) $(HI_LDFLAGS) $(word 2,$^) -o $@
+test/%: c_flags   += -DHI_IS_TEST=1 -g
+test/%: cxx_flags += -DHI_IS_TEST=1 -g
 test/%: lib$(project_id) $(object_dir)/test/%.o
 	$(LD) $(HI_LDFLAGS) $(word 2,$^) -o $@
 	@echo "\033[1;36;40mRunning $@\033[0m"
-	@$@
+	@($@ ; exit 0)
 
 $(test_suit_dir)/%.o: test/%.cc
 	$(CXX) $(cxx_flags) -c -o $@ $<

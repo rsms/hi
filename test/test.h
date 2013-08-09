@@ -11,10 +11,6 @@
 #ifndef _HI_TEST_H_
 #define _HI_TEST_H_
 
-#ifdef HI_DEBUG
-  #undef HI_DEBUG
-#endif
-#define HI_DEBUG 1
 #ifdef NDEBUG
   #undef NDEBUG
 #endif
@@ -25,7 +21,10 @@
 #if HI_TEST_SUIT_RUNNING
   #define print(...) ((void)0)
 #else
-  #define print(fmt, ...) fprintf(stderr, fmt "\n", ##__VA_ARGS__)
+  #define print(fmt, ...) do { \
+    fprintf(stderr, fmt "\n", ##__VA_ARGS__); \
+    fflush(stderr); \
+  } while(0)
 #endif
 
 // ------------------------------

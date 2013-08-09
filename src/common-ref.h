@@ -10,6 +10,9 @@ namespace hi {
 // Reference-counted POD-style objects
 struct ref_counted {
   volatile uint32_t __refcount = 1;
+#if HI_DEBUG
+  std::function<void()> __debug_on_dealloc;
+#endif
 };
 
 // Example:
@@ -23,7 +26,7 @@ struct ref_counted {
 //   struct lolcat::S : ref_counted {
 //     bool happy;
 //   };
-//   void lolcat::dealloc(S* p) { /* free anything in `self` */ delete self; }
+//   void lolcat::dealloc(S* p) { delete self; }
 //   lolcat::lolcat(bool happy) : lolcat(new S) { self->happy = happy; }
 //   void lolcat::set_happy(bool b) { self->happy = b; }
 //   bool lolcat::happy() const { return self->happy; }
@@ -48,6 +51,7 @@ public: \
   static void __release(S* p) { \
     if (p != nullptr \
         && (hi_atomic_sub_fetch(&((::hi::ref_counted*)p)->__refcount, 1) == 0)) { \
+      _HI_DEBUG_REF_DEALLOC(p) \
       dealloc(p); \
     } \
   } \
@@ -118,6 +122,22 @@ public: \
 //   //printf("** DECR %p\n", p);
 //   return (hi_atomic_sub_fetch(&p->__refcount, 1) == 0);
 // }
+
+#if HI_DEBUG
+  // Used for unit tests
+  template <typename T>
+  void debug_ref_on_dealloc(T& obj, std::function<void(ref_counted*)> b) {
+    ref_counted* self = (ref_counted*)obj.self;
+    self->__debug_on_dealloc = [=]{ b(self); };
+  }
+  #define _HI_DEBUG_REF_DEALLOC(p) do { \
+    if ((bool)((::hi::ref_counted*)(p))->__debug_on_dealloc) { \
+      ((::hi::ref_counted*)(p))->__debug_on_dealloc(); \
+    } \
+  } while(0);
+#else
+  #define _HI_DEBUG_REF_DEALLOC(p)
+#endif
 
 // template <typename T> using ref = ::std::shared_ptr<T>;
 

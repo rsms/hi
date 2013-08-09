@@ -4,6 +4,9 @@
 using namespace hi;
 
 int main(int argc, char** argv) {
+  // main queue thread_id should be configured already
+  assert_true(main_queue().is_current());
+
   // should be same objects and not null
   queue& q0 = main_queue();
   queue& q1 = main_queue();
